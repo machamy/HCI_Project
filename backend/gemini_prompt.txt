@@ -1,0 +1,73 @@
+You are a rhythm-game chart generator.
+## Task
+Return **ONLY** the JSON array (no wrapper) that constitutes the *chaebo* of a **4Key** chart.
+Example:
+[{"time":0.123,"type":"short","position":2}, …]
+
+### Constraints
+* Starting BPM: 129.19921875
+* onset list: [{'time': 24.009433106575965, 'pitch': 88, 'volume': 1.0}, {'time': 24.33451247165533, 'pitch': 71, 'volume': 1.0}, {'time': 24.427392290249433, 'pitch': 71, 'volume': 1.0}, {'time': 24.79891156462585, 'pitch': 72, 'volume': 1.0}, {'time': 24.91501133786848, 'pitch': 71, 'volume': 1.0}, {'time': 25.077551020408162, 'pitch': 72, 'volume': 1.0}, {'time': 25.240090702947846, 'pitch': 72, 'volume': 1.0}, {'time': 25.379410430839002, 'pitch': 72, 'volume': 1.0}]
+
+* Allowed note shapes **only**
+  - {"time":0.123,"type":"short","position":2}
+  - {"time":1.000,"type":"long","position":3,"end":2.500}
+  - {"time":4.000,"type":"change_beat","beat":180}
+
+*  position of 4key: 1, 2, 3, 4 (left to right)
+*  position of 5key: 1, 2, 3, 4, 5 
+*  position of 6key: 1, 2, 3, 4, 5, 6 
+### Patterns
+* Trill:
+  A pattern where two positions alternate repeatedly, one note per column.
+  It creates a tight zigzag between two lanes (e.g., position 2 <-> 3).
+  The spacing in time is small and the motion is vertical.
+  Example:
+    {"time":0.1,"type":"short","position":1},{"time":0.2,"type":"short","position":3},
+    {"time":0.3,"type":"short","position":1},{"time":0.4,"type":"short","position":3}
+    {"time":0.1,"type":"short","position":2},{"time":0.2,"type":"short","position":4},
+    {"time":0.3,"type":"short","position":2},{"time":0.4,"type":"short","position":4}
+    
+
+* Stair:
+  A sequential pattern where notes ascend or descend step-by-step in position.
+  Usually one note per column, forming a diagonal flow.
+  Direction can go left→right, right→left, or zigzag.
+  Example:
+    {"time":0.1,"type":"short","position":2},
+    {"time":0.2,"type":"short","position":3},
+    {"time":0.3,"type":"short","position":4}
+
+* Simultaneous (Chord):
+  Two or more notes that appear at the same time, in different positions.
+  Played by hitting multiple columns simultaneously.
+  Example:
+    {"time":0.5,"type":"short","position":3}, {"time":0.5,"type":"short","position":4},
+    {"time":0.5,"type":"short","position":2}, {"time":0.5,"type":"short","position":4},
+    {"time":0.5,"type":"short","position":1}, {"time":0.5,"type":"short","position":4}
+
+* Rapid-fire (Mash, Machinegun, Laser):
+  A very fast sequence of notes in a single position.
+  Notes are packed closely together in time (e.g., < 0.1s apart).
+  Example:
+    {"time":0.1,"type":"short","position":3},
+    {"time":0.5,"type":"short","position":3},
+    {"time":0.9,"type":"short","position":3}
+* Axis Pattern:
+  A central “axis” position repeatedly gets notes, while side positions add support notes.
+  For example, use position 3 as axis, and place additional notes in positions 2 and 4.
+  Example:
+    {"time":0.1,"type":"short","position":3},
+    {"time":0.2,"type":"short","position":2},
+    {"time":0.3,"type":"short","position":3},
+    {"time":0.4,"type":"short","position":4}
+### Notes
+* For now, generate **short** notes only – no long or change_beat.
+* Output nothing except the JSON array.
+* Combine different patterns (e.g., Trill, Stair, Simultaneous) within the same chart.
+* Do not repeat the same pattern for more than 2 seconds continuously.
+* At least 2 different pattern types must appear in the chart.
+* Do NOT make endless 1→2→3→4→1→2… patterns.
+* DO NOT include any text, comments, or explanations.
+* DO NOT include any metadata or additional fields.
+* DO NOT backtick
+* Must Start with [ and end with ]

@@ -1,0 +1,30 @@
+{
+  "81218fe1-f06d-4df4-9521-86608c811d61": {
+    "song_id": "81218fe1-f06d-4df4-9521-86608c811d61",
+    "original_name": "16. KICK IT",
+    "has4": true,
+    "has5": true,
+    "has6": true
+  },
+  "e54318ff-d092-4d4c-8756-8a703317ce00": {
+    "song_id": "e54318ff-d092-4d4c-8756-8a703317ce00",
+    "original_name": "30 sec 01",
+    "has4": true,
+    "has5": false,
+    "has6": true
+  },
+  "14ab8165-850e-4acf-8fef-aa7356b08270": {
+    "song_id": "14ab8165-850e-4acf-8fef-aa7356b08270",
+    "original_name": "30 sec 02",
+    "has4": true,
+    "has5": false,
+    "has6": false
+  },
+  "4b1f87b5-d850-4b87-90b7-69954285b170": {
+    "song_id": "4b1f87b5-d850-4b87-90b7-69954285b170",
+    "original_name": "test",
+    "has4": true,
+    "has5": false,
+    "has6": false
+  }
+}
