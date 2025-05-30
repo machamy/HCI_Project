@@ -1,71 +1,78 @@
-// src/scenes/GameScene.ts
 import Phaser from 'phaser';
 import type { Chart, Note } from '../types/chart';
+
+const JUDGE = { perfect: 0.10, good: 0.15, miss: 0.25 };
 
 interface ActiveNote {
   note: Note;
   head: Phaser.GameObjects.Rectangle;
   body?: Phaser.GameObjects.Rectangle;
+  label?: Phaser.GameObjects.Text;  // 디버그용
+  started: boolean;
   judged: boolean;
-  startJudged?: boolean;
-  cancelled?: boolean;
+  cancelled: boolean;
 }
 
 export class GameScene extends Phaser.Scene {
+  /* 전달 데이터 */
   private songId!: string;
-  private keyMode!: 4|5|6;
-  private audio!: HTMLAudioElement;
+  private keyMode!: 4 | 5 | 6;
+  private initialVolume = 1;
 
+  /* 오디오 */
+  private audio!: HTMLAudioElement;
+  private songStarted = false;
+
+  /* 시간 */
+  private approachSec = 2;
+  private virtualTime = -this.approachSec - 3;
+  private readonly SYNC_THRESHOLD = 0.02;
+
+  /* 차트 & 노트 */
   private chart!: Chart;
   private notes: ActiveNote[] = [];
 
-  private speed = 1;
-  private paused = false;
+  /* 판정 파라미터 */
   private judgeY = 500;
-  private pps = 200;
+  private speed  = 1;
+  private get pps() { return (this.judgeY / this.approachSec) * this.speed; }
 
+  private paused = false;
+
+  /* HUD & 그래픽 */
   private totalScore = 0;
   private totalNotes = 0;
-  private judgedCount = 0;
-  private scoreText!: Phaser.GameObjects.Text;
+  private judgedCnt  = 0;
+  private combo      = 0;
 
-  private comboCount = 0;
-  private comboTextTitle!: Phaser.GameObjects.Text;
-  private comboTextCount!: Phaser.GameObjects.Text;
+  private scoreText!:      Phaser.GameObjects.Text;
+  private comboTitle!:     Phaser.GameObjects.Text;
+  private comboCount!:     Phaser.GameObjects.Text;
+  private feedbackText!:   Phaser.GameObjects.Text;
+  private glow!:           Phaser.GameObjects.Graphics;
 
-  private feedbackText!: Phaser.GameObjects.Text;
-  private glowGraphics!: Phaser.GameObjects.Graphics;
+  private debugMode = false;
+  private debugText!: Phaser.GameObjects.Text;
 
+  private laneKeys: Phaser.Input.Keyboard.Key[] = [];
   private keyMap: Record<4|5|6, number[]> = {
-    4: [
-      Phaser.Input.Keyboard.KeyCodes.S,
-      Phaser.Input.Keyboard.KeyCodes.D,
-      Phaser.Input.Keyboard.KeyCodes.L,
-      Phaser.Input.Keyboard.KeyCodes.SEMICOLON
-    ],
-    5: [
-      Phaser.Input.Keyboard.KeyCodes.S,
-      Phaser.Input.Keyboard.KeyCodes.D,
-      Phaser.Input.Keyboard.KeyCodes.SPACE,
-      Phaser.Input.Keyboard.KeyCodes.L,
-      Phaser.Input.Keyboard.KeyCodes.SEMICOLON
-    ],
-    6: [
-      Phaser.Input.Keyboard.KeyCodes.A,
-      Phaser.Input.Keyboard.KeyCodes.S,
-      Phaser.Input.Keyboard.KeyCodes.D,
-      Phaser.Input.Keyboard.KeyCodes.L,
-      Phaser.Input.Keyboard.KeyCodes.SEMICOLON,
-      Phaser.Input.Keyboard.KeyCodes.QUOTES
-    ],
+    4: [Phaser.Input.Keyboard.KeyCodes.S, Phaser.Input.Keyboard.KeyCodes.D,
+        Phaser.Input.Keyboard.KeyCodes.L, Phaser.Input.Keyboard.KeyCodes.SEMICOLON],
+    5: [Phaser.Input.Keyboard.KeyCodes.S, Phaser.Input.Keyboard.KeyCodes.D,
+        Phaser.Input.Keyboard.KeyCodes.SPACE,
+        Phaser.Input.Keyboard.KeyCodes.L, Phaser.Input.Keyboard.KeyCodes.SEMICOLON],
+    6: [Phaser.Input.Keyboard.KeyCodes.A, Phaser.Input.Keyboard.KeyCodes.S,
+        Phaser.Input.Keyboard.KeyCodes.D,
+        Phaser.Input.Keyboard.KeyCodes.L, Phaser.Input.Keyboard.KeyCodes.SEMICOLON,
+        Phaser.Input.Keyboard.KeyCodes.QUOTES],
   };
 
   constructor() { super({ key: 'GameScene' }); }
 
-  init(data: { songId: string; keyMode: 4|5|6; audio: HTMLAudioElement }) {
-    this.songId  = data.songId;
+  init(data:{ songId:string; keyMode:4|5|6; volume:number }) {
+    this.songId = data.songId;
     this.keyMode = data.keyMode;
-    this.audio   = data.audio;
+    this.initialVolume = data.volume;
   }
 
   preload() {
@@ -73,222 +80,253 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
+    // 1) 차트 로드
     this.chart = this.cache.json.get(this.songId) as Chart;
-    const chartForMode = this.chart[`${this.keyMode}key` as '4key'|'5key'|'6key'];
-    this.totalNotes = chartForMode.chaebo.length;
+    const list = this.chart[`${this.keyMode}key` as '4key'|'5key'|'6key'];
+    this.totalNotes = list.chaebo.length;
 
-    this.glowGraphics = this.add.graphics();
+    // 2) 오디오 설정
+    this.audio = new Audio(`/api/audio/${this.songId}`);
+    this.audio.volume  = this.initialVolume;
+    this.audio.preload = 'auto';
+    this.audio.load();
+
+    // 3) HUD & 판정선
+    this.buildHUD();
+    this.glow = this.add.graphics();
     this.drawColumns();
 
-    // HUD: pastel-cyan score
-    this.scoreText = this.add.text(10, 10, '0%', {
-      fontSize: '16px', color: '#B2EBF2'
-    }).setDepth(20);
+    // 4) 노트 생성
+    this.spawnNotes(list.chaebo);
 
+    // 5) 입력 설정
+    this.setupInput();
+
+    // 볼륨 변경 이벤트
+    window.addEventListener('rg-set-volume', (e:any) => {
+      this.audio.volume = e.detail as number;
+    });
+
+    // 6) 카운트다운 후 재생
+    this.startCountdown();
+  }
+
+  private setupInput() {
+
+    if (!this.input.keyboard) {
+      console.error('Keyboard input not available');
+      return;
+    }
+    // 각 키를 Key 객체로 생성
+    this.laneKeys = this.keyMap[this.keyMode].map(code =>
+      this.input.keyboard.addKey(code)
+    );
+    // P, U, 속도 조절 키
+    this.input.keyboard.on('keydown-P', () => this.togglePause());
+    this.input.keyboard.on('keydown-U', () => this.toggleDebug());
+    this.input.keyboard.on('keydown-ONE', () => this.speed = Math.max(0.5, this.speed - 0.5));
+    this.input.keyboard.on('keydown-TWO', () => this.speed += 0.5);
+
+    // esc
+    this.input.keyboard.on('keydown-ESC', () => {
+      this.audio.pause();
+      // Phaser 씬(stop)도 같이 해 줄 수 있고…
+      this.scene.stop();
+
+      // 리액트로 “나가라” 이벤트 보내기
+      window.dispatchEvent(new CustomEvent('rg-exit'));
+    });
+  }
+
+  private startCountdown() {
+    const txt = this.add.text(
+      this.cameras.main.centerX,
+      this.cameras.main.centerY,
+      '3', { fontSize:'64px', color:'#fff' }
+    ).setOrigin(0.5).setDepth(40);
+
+    let count = 3;
+    this.time.addEvent({
+      delay: 1000,
+      repeat: 2,
+      callback: () => {
+        count--;
+        txt.setText(String(count));
+      }
+    });
+
+    this.time.delayedCall(3000, () => {
+      txt.destroy();
+      this.virtualTime = -this.approachSec;
+      this.audio.play();
+      this.songStarted = true;
+    });
+  }
+
+  update(_time: number, delta: number) {
+    if (this.paused) return;
+
+    // 동시 입력 처리
+    this.laneKeys.forEach((key, idx) => {
+      if (Phaser.Input.Keyboard.JustDown(key)) this.onLaneDown(idx);
+      if (Phaser.Input.Keyboard.JustUp(key)) this.onLaneUp(idx);
+    });
+
+    // 가상 시간 진행
+    this.virtualTime += delta / 1000;
+    if (this.songStarted) {
+      const drift = this.audio.currentTime - this.virtualTime;
+      if (Math.abs(drift) > this.SYNC_THRESHOLD) {
+        this.virtualTime += drift;
+      }
+    }
+
+    // 노트 위치 업데이트
+    for (const an of this.notes) {
+      const dy = an.note.time - this.virtualTime;
+      const y  = this.judgeY - dy * this.pps;
+      an.head.y = y;
+      an.head.setVisible(y >= -70 && y <= this.scale.height + 70);
+
+      // 디버그 라벨
+      if (this.debugMode) {
+        if (!an.label) {
+          an.label = this.add.text(
+            an.head.x + 18, y - 6,
+            an.note.time.toFixed(2) + 's',
+            { fontSize: '10px', color: '#00e5ff' }
+          ).setDepth(50);
+        } else {
+          an.label.setPosition(an.head.x + 18, y - 6);
+        }
+      }
+    }
+
+    // 디버그 텍스트
+    if (this.debugMode) {
+      this.debugText.setText(
+        `audio  : ${this.audio.currentTime.toFixed(3)} s\n` +
+        `virtual: ${this.virtualTime.toFixed(3)} s`
+      );
+    }
+
+    // 배열 정리
+    this.notes = this.notes.filter(n => !n.judged && !n.cancelled);
+  }
+
+  private onLaneDown(idx: number) {
+    if (this.virtualTime < -0.05) return;
+    this.flashColumn(idx);
+    const now = this.audio.currentTime;
+    this.notes
+      .filter(n => !n.judged && n.note.position === idx + 1)
+      .sort((a, b) => Math.abs(a.note.time - now) - Math.abs(b.note.time - now))
+      .forEach(n => {
+        const diff = Math.abs(n.note.time - now);
+        if (diff > JUDGE.miss) return;
+        const { perfect, good } = JUDGE;
+        let score = 0;
+        let msg = 'Miss';
+        let col = 0xFF6B6B;
+        if (diff <= perfect)      { score = 100; msg = 'Perfect!'; col = 0xA8E6CF; }
+        else if (diff <= good)    { score =  50; msg = 'Fast';     col = 0xA8E6CF; }
+        this.judge(n, msg, score, col);
+      });
+  }
+
+  private onLaneUp(idx: number) {
+    const now = this.audio.currentTime;
+    this.notes
+      .filter(n => n.note.type === 'long' && n.started && !n.judged && n.note.position === idx + 1)
+      .sort((a, b) => Math.abs(a.note.end! - now) - Math.abs(b.note.end! - now))
+      .forEach(n => {
+        const diff = Math.abs(n.note.end! - now);
+        if (diff > JUDGE.miss) {
+          this.judge(n, 'Miss', 0, 0xFF6B6B);
+        } else {
+          const perf = diff <= JUDGE.perfect;
+          const score = perf
+            ? 100
+            : Math.round(Phaser.Math.Linear(99, 50, (diff - JUDGE.perfect) / (JUDGE.good - JUDGE.perfect)));
+          this.judge(n, perf ? 'Perfect!' : 'Slow', score, 0xA8E6CF);
+        }
+      });
+  }
+
+  private flashColumn(idx: number) {
+    const colW = this.scale.width / this.keyMode;
+    const x = colW * idx + colW / 2;
+    const rect = this.add.rectangle(
+      x, this.judgeY / 2,
+      colW, this.judgeY,
+      0x8ecae6, 0.5
+    ).setOrigin(0.5);
+    this.tweens.add({
+      targets: rect,
+      alpha: 0,
+      duration: 200,
+      onComplete: () => rect.destroy()
+    });
+  }
+  private judge(n: ActiveNote, msg: string, score: number, color: number) {
+    n.judged = true;
+    n.head.destroy();
+    n.body?.destroy();
+    n.label?.destroy();
+    this.showFeedback(msg, color);
+    this.totalScore += score;
+    this.judgedCnt++;
+    const pct = Math.round((this.totalScore / Math.max(1, this.judgedCnt * 100)) * 100);
+    this.scoreText.setText(`${pct}%`);
+    this.combo = score > 0 ? this.combo + 1 : 0;
+    if (this.combo > 1) {
+      this.comboTitle
+        .setAlpha(1)
+        .setFontSize(48)
+        .setStroke('#FFD700', 4)
+        .setShadow(2, 2, '#000', 2);
+      this.comboCount
+        .setText(String(this.combo))
+        .setAlpha(1)
+        .setFontSize(36)
+        .setStroke('#FFA500', 4)
+        .setShadow(2, 2, '#000', 2);
+    } else {
+      this.comboTitle.setAlpha(0);
+      this.comboCount.setAlpha(0);
+    }
+  }
+
+
+  private buildHUD() {
+    this.scoreText = this.add.text(10, 10, '0%', { fontSize: '16px', color: '#B2EBF2' });
     const cx = this.cameras.main.centerX;
     const cy = this.cameras.main.centerY;
-
-    this.comboTextTitle = this.add.text(cx, cy - 20, 'Combo!', {
-      fontSize: '32px', color: '#FFE4E1'
-    }).setOrigin(0.5).setAlpha(0).setDepth(20);
-
-    this.comboTextCount = this.add.text(cx, cy + 10, '', {
-      fontSize: '24px', color: '#FFE4E1'
-    })
-      .setOrigin(0.5)
-      .setStroke('#FFC0CB', 3)
-      .setShadow(2, 2, '#000000', 2)
-      .setAlpha(0)
-      .setDepth(20);
-
-    this.feedbackText = this.add.text(cx, this.judgeY - 50, '', {
-      fontSize: '32px', align: 'center', color: '#E0FFFF'
-    }).setOrigin(0.5).setDepth(20).setAlpha(0);
-
-    // 노트 생성
-    const colW = this.scale.width / this.keyMode;
-    for (const note of chartForMode.chaebo) {
-      const x = colW * (note.position - 0.5);
-      const head = this.add.rectangle(x, 0, colW * 0.8, 20, 0xffffff).setOrigin(0.5);
-      let body: Phaser.GameObjects.Rectangle|undefined;
-      if (note.type === 'long') {
-        body = this.add.rectangle(x, 0, colW * 0.4, 0, 0xffffff).setOrigin(0.5);
-      }
-      this.notes.push({ note, head, body, judged: false });
-    }
-
-    // 입력
-    this.input.keyboard.on('keydown',   e => this.onKeyDown(e));
-    this.input.keyboard.on('keyup',     e => this.onKeyUp(e));
-    this.input.keyboard.on('keydown-P', () => this.togglePause());
-    this.input.keyboard.on('keydown-ONE',() => this.speed = Math.max(0.5, this.speed - 0.5));
-    this.input.keyboard.on('keydown-TWO',() => this.speed += 0.5);
-  }
-
-  update() {
-    if (this.paused) return;
-    const elapsed = this.audio.currentTime;
-
-    for (const an of this.notes) {
-      const { note, head, body, judged, startJudged, cancelled } = an;
-      const dS = note.time - elapsed;
-      const y  = this.judgeY - dS * this.speed * this.pps;
-      head.y = y;
-      head.setVisible(y >= -50 && y <= this.scale.height + 50);
-
-      if (body && note.type === 'long') {
-        const dE = note.end! - elapsed;
-        const y2 = this.judgeY - dE * this.speed * this.pps;
-        body.y      = (y + y2) / 2;
-        body.height = Math.max(5, y - y2);
-      }
-
-      if (note.type === 'short' && !judged && y > this.judgeY + 50) {
-        this.judgeNote(an, Math.abs(dS), 'Miss', 0, 0xFF6B6B);
-      }
-      if (note.type === 'long' && !startJudged && !cancelled && y > this.judgeY + 50) {
-        an.cancelled = true;
-        this.tweens.add({ targets: head, alpha: 0, duration: 1000 });
-        if (body) this.tweens.add({ targets: body, alpha: 0, duration: 1000 });
-      }
-      if (note.type === 'long' && startJudged && !judged && elapsed > note.end! + 0.8) {
-        this.judgeNote(an, Math.abs(note.end! - elapsed), 'Miss', 0, 0xFF6B6B);
-      }
-    }
-
-    this.notes = this.notes.filter(an => !an.judged && !an.cancelled);
-  }
-
-private onKeyDown(e: KeyboardEvent) {
-  const idx = this.keyMap[this.keyMode].indexOf(e.keyCode);
-  if (idx < 0) return;
-  this.flashColumn(idx);
-
-  const elapsed = this.audio.currentTime;
-  let candidate: ActiveNote|null = null;
-  let bestD = Infinity;
-  for (const an of this.notes) {
-    if (an.judged || an.note.position !== idx + 1) continue;
-    const d = Math.abs(an.note.time - elapsed);
-    if (d < bestD) { bestD = d; candidate = an; }
-  }
-  if (!candidate || bestD > 0.8) return;
-
-  if (candidate.note.type === 'short') {
-    // 숏 노트는 기존대로
-    const sc  = bestD < 0.1 ? 100 : bestD <= 0.5 ? 50 : 0;
-    const msg = bestD < 0.1 ? 'Perfect!' : 'Fast';
-    this.judgeNote(candidate, bestD, msg, sc, 0xA8E6CF);
-
-  } else {
-    // ─── 롱노트 시작: Hold! 표시만, 파괴 NO
-    candidate.startJudged = true;
-    // this.feedbackText
-    //   .setText('Hold!')
-    //   .setColor('#A8E6CF')
-    //   .setAlpha(1);
-    this.tweens.add({
-      targets: this.feedbackText,
-      alpha: 0,
-      delay: 300,
-      duration: 200
-    });
-
-    // ─── 남은 길이에 맞춰 부드러운 페이드아웃
-    const remainingSec = candidate.note.end! - elapsed;
-    const durationMs   = Math.max(0, remainingSec * 1000 / this.speed);
-    this.tweens.add({
-      targets: [candidate.head, candidate.body].filter(x => !!x),
-      alpha: { from: 1, to: 0 },
-      duration: durationMs,
-      ease: 'Linear'
-    });
-    // **이제 onKeyUp에서만 judgeNote** 호출하도록 변경됩니다.
-  }
-}
-
-  private onKeyUp(e: KeyboardEvent) {
-    const idx = this.keyMap[this.keyMode].indexOf(e.keyCode);
-    if (idx < 0) return;
-    const elapsed = this.audio.currentTime;
-    let cand: ActiveNote|null = null, best = Infinity;
-    for (const an of this.notes) {
-      if (an.note.type !== 'long' || !an.startJudged || an.judged) continue;
-      if (an.note.position !== idx+1) continue;
-      const d = Math.abs(an.note.end! - elapsed);
-      if (d < best) { best = d; cand = an; }
-    }
-    if (!cand) return;
-
-    if (best > 0.8) {
-      this.judgeNote(cand, best, 'Miss', 0, 0xFF6B6B);
-    } else {
-      const perf = best < 0.1;
-      const sc = perf
-        ? 100
-        : Math.round(Phaser.Math.Linear(99, 50, (best - 0.1) / 0.4));
-      const msg = perf ? 'Perfect!' : 'Slow';
-      this.judgeNote(cand, best, msg, sc, 0xA8E6CF);
-    }
-  }
-
-  private judgeNote(
-    an: ActiveNote,
-    _d: number,
-    msg: string,
-    score: number,
-    color: number
-  ) {
-    an.judged = true;
-    an.head.destroy();
-    if (an.body) an.body.destroy();
-
-    this.feedbackText
-      .setText(msg)
-      .setColor(`#${color.toString(16).padStart(6,'0')}`)
-      .setAlpha(1);
-    this.tweens.add({ targets: this.feedbackText, alpha: 0, delay: 500, duration: 300 });
-
-    this.totalScore += score;
-    this.judgedCount++;
-    const pct = this.totalNotes > 0
-      ? Math.round((this.totalScore / (this.judgedCount * 100)) * 100)
-      : 0;
-    this.scoreText.setText(`${pct}%`);
-
-    this.comboCount = score > 0 ? this.comboCount + 1 : 0;
-    if (this.comboCount > 1) {
-      this.comboTextTitle.setAlpha(1);
-      this.comboTextCount.setText(String(this.comboCount)).setAlpha(1);
-    } else {
-      this.comboTextTitle.setAlpha(0);
-      this.comboTextCount.setAlpha(0);
-    }
+    this.comboTitle = this.add.text(cx, cy - 40, 'Combo!', { fontSize: '32px', color: '#FFE4E1' })
+      .setOrigin(0.5).setAlpha(0);
+    this.comboCount = this.add.text(cx, cy + 5, '', { fontSize: '24px', color: '#FFE4E1' })
+      .setOrigin(0.5).setStroke('#FFC0CB', 3).setAlpha(0);
+    this.feedbackText = this.add.text(cx, this.judgeY - 50, '', { fontSize: '32px', color: '#E0FFFF' })
+      .setOrigin(0.5).setAlpha(0);
+    this.debugText = this.add.text(2, 2, '', { fontSize: '14px', color: '#00e5ff' })
+      .setDepth(60).setScrollFactor(0).setVisible(false);
   }
 
   private drawColumns() {
     const g = this.add.graphics();
-    const w = this.scale.width, h = this.scale.height, colW = w / this.keyMode;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const colW = w / this.keyMode;
     g.lineStyle(1, 0xcccccc, 0.3);
     for (let i = 1; i < this.keyMode; i++) {
       const x = colW * i;
-      g.moveTo(x, 0); g.lineTo(x, h);
+      g.moveTo(x, 0);
+      g.lineTo(x, h);
     }
     g.lineStyle(4, 0xffffff);
-    g.moveTo(0, this.judgeY); g.lineTo(w, this.judgeY);
+    g.moveTo(0, this.judgeY);
+    g.lineTo(w, this.judgeY);
     g.strokePath();
-  }
-
-  private flashColumn(idx: number) {
-    const colW = this.scale.width / this.keyMode, x0 = colW * idx;
-    const blue = 0x8ecae6;
-    let hl = 0xffffff;
-    if ((this.keyMode === 4 && (idx===1||idx===2)) || (this.keyMode!==4 && (idx+1)%2===0)) hl = blue;
-
-    this.glowGraphics.clear();
-    this.glowGraphics.fillGradientStyle(0x000000,0x000000,hl,hl,0.7);
-    this.glowGraphics.fillRect(x0,0,colW,this.judgeY);
-    this.time.delayedCall(300,() => this.glowGraphics.clear());
   }
 
   private togglePause() {
@@ -301,4 +339,44 @@ private onKeyDown(e: KeyboardEvent) {
       this.audio.play();
     }
   }
+
+  private toggleDebug() {
+    this.debugMode = !this.debugMode;
+    this.debugText.setVisible(this.debugMode);
+    if (!this.debugMode) this.notes.forEach(n => n.label?.setVisible(false));
+  }
+
+    /* spawnNotes: 차트에서 받은 chaebo 데이터를 기반으로 노트 객체 생성 */
+  private spawnNotes(list: Note[]) {
+    const colW = this.scale.width / this.keyMode;
+    list.forEach(note => {
+      const x = colW * (note.position - 0.5);
+      const head = this.add.rectangle(x, -40, colW * 0.8, 20, 0xffffff).setOrigin(0.5);
+      let body: Phaser.GameObjects.Rectangle | undefined;
+      if (note.type === 'long') {
+        body = this.add.rectangle(x, this.judgeY, colW * 0.4, (note.end! - note.time) * this.pps, 0xffffff)
+                       .setOrigin(0.5, 1);
+      }
+      this.notes.push({ note, head, body, started: false, judged: false, cancelled: false });
+    });
+  }
+
+  private showFeedback(msg: string, color: number) {
+    this.tweens.killTweensOf(this.feedbackText);
+    
+    this.feedbackText
+      .setText(msg)
+      .setColor(`#${color.toString(16).padStart(6, '0')}`)
+      .setAlpha(1)
+      .setFontSize(40)
+      .setStroke('#00FFFF', 4)
+      .setShadow(2, 2, '#000', 2);
+    this.tweens.add({
+      targets: this.feedbackText,
+      alpha: 0,
+      delay: 0,
+      duration: 500
+    });
+  }
+
 }

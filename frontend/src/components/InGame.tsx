@@ -43,15 +43,15 @@ export default function InGame() {
   /* ─────────────────────────────
      2) ESC → 선택 화면
   ───────────────────────────── */
-  useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        gameRef.current?.destroy(true);
-        navigate('/select');
-      }
+    useEffect(() => {
+    const onExit = () => {
+      // Phaser 인스턴스 파괴
+      gameRef.current?.destroy(true);
+      // React 라우트 전환
+      navigate('/select');
     };
-    window.addEventListener('keydown', onEsc);
-    return () => window.removeEventListener('keydown', onEsc);
+    window.addEventListener('rg-exit', onExit);
+    return () => window.removeEventListener('rg-exit', onExit);
   }, [navigate]);
 
   /* ─────────────────────────────

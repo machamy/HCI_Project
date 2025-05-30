@@ -54,33 +54,66 @@ def generate_dummy_charts() -> Dict[str, Any]:
             for k in (4, 5, 6)}
 
 # ────────────── 오디오 분석 ─────────────
-def analyze_audio(path: str, max_onsets: int = 600) -> Dict[str, Any]:
+def analyze_audio(
+    path: str,
+    slow_rate: float = 0.5,
+    max_onsets: int = 400
+) -> Dict[str, Any]:
+    """
+    MP3/WAV → BPM + onset 리스트(dict) 반환
+    slow_rate: 속도 비율 (1.0 = 원속도, 0.5 = 반속도)
+    """
+    # 1) 원본 신호 로드
     y, sr = librosa.load(path, sr=22050, mono=True)
-    onset_frames = librosa.onset.onset_detect(y=y, sr=sr, units="frames", backtrack=True)
-    onset_times = librosa.frames_to_time(onset_frames, sr=sr)
 
-    pitches, magnitudes = librosa.piptrack(y=y, sr=sr)
+    # 2) BPM 측정 (원본)
+    tempo = librosa.beat.tempo(y=y, sr=sr)[0]
+    bpm = float(np.round(tempo, 2))
 
+    # 3) 속도 변경 (pitch-preserving)
+    if slow_rate != 1.0:
+        y_proc = librosa.effects.time_stretch(y, rate=slow_rate)
+    else:
+        y_proc = y
+
+    # 4) onset 검출 (느려진 신호 기준)
+    onset_frames = librosa.onset.onset_detect(
+        y=y_proc,
+        sr=sr,
+        units="frames",
+        backtrack=True
+    )
+    onset_times_slow = librosa.frames_to_time(onset_frames, sr=sr)
+
+    # 5) pitch·volume 분석 (느려진 신호 기준)
+    pitches, magnitudes = librosa.piptrack(y=y_proc, sr=sr)
+
+    # 6) 결과 조합 & 시간 환산 및 반올림
     output = []
-    for f in onset_frames:
-        pitch = pitches[:, f]
-        mag = magnitudes[:, f]
+    for idx, frame in enumerate(onset_frames):
+        # 느려진 시간 → 원래 시간
+        t_slow = onset_times_slow[idx]
+        t_orig = round(t_slow * slow_rate, 4)
+
+        # pitch & volume
+        mag = magnitudes[:, frame]
         if mag.any():
-            idx = mag.argmax()
-            freq = pitch[idx]
-            midi = librosa.hz_to_midi(freq) if freq > 0 else None
-            amp = float(np.clip(mag[idx], 0, 1))
+            i = mag.argmax()
+            freq = pitches[i, frame]
+            midi = int(librosa.hz_to_midi(freq)) if freq > 0 else None
+            amp = float(np.clip(mag[i], 0, 1))
+
             output.append({
-                "time": float(librosa.frames_to_time(f, sr=sr)),
-                "pitch": int(midi) if midi else None,
+                "time": t_orig,
+                "pitch": midi,
                 "volume": amp
             })
 
+    # 7) 최대 개수 제한 & 반환
     return {
-        "bpm": float(librosa.beat.tempo(y=y, sr=sr)[0]),
+        "bpm": bpm,
         "onsets": output[:max_onsets]
     }
-
 
 # ────────────── Gemini 호출 ─────────────
 def call_gemini_raw(prompt: str) -> Any:
@@ -121,8 +154,25 @@ def call_gemini(prompt: str) -> Any:
     return json.loads(text)
 
 # ────────────── 온셋 분할 & Chaebo 생성 ─────────────
-def chunk_onsets(onsets: List[float], size: int = 600) -> List[List[float]]:
-    return [onsets[i:i+size] for i in range(0, len(onsets), size)]
+def chunk_onsets(onsets: List[Dict[str, Any]], size: int = 600) -> List[List[Dict[str, Any]]]:
+    """
+    Splits a list of onset dicts (each with time, pitch, volume) into chunks,
+    rounding each time to 4 decimal places but preserving pitch and volume.
+    """
+    # 1) Round the time field and preserve pitch & volume
+    rounded = []
+    for o in onsets:
+        if "time" not in o:
+            continue
+        seg = {
+            "time": round(o["time"], 4),
+            "pitch": o.get("pitch"),
+            "volume": o.get("volume")
+        }
+        rounded.append(seg)
+
+    # 2) Chunk into fixed-size lists
+    return [rounded[i : i + size] for i in range(0, len(rounded), size)]
 
 def get_prompt(key: int, bpm: float, onsets: List[float], extra_prompt: str = "") -> str:
     prompt = """
@@ -186,6 +236,7 @@ Key : {key}
 BPM : {bpm}
 Onsets : {json.dumps(onsets, ensure_ascii=False)}
 
+*Note: All timestamps are rounded to exactly 4 decimal places. Output times must match this format.*
 """
 
 
@@ -205,7 +256,8 @@ async def ask_gemini_for_chaebo(key: int, bpm: float, onsets: List[float], extra
 
     return res
 
-async def build_chart_with_chunks(key: int, summary: Dict[str, Any], extra_prompt: str = "", chunk_size: int = 400) -> Dict[str, Any]:
+
+async def build_chart_with_chunks(key: int, summary: Dict[str, Any], extra_prompt: str = "", chunk_size: int = 300) -> Dict[str, Any]:
     global prompt_cnt
     prompt_cnt = 0
     
@@ -279,23 +331,36 @@ async def upload_music(
     file: UploadFile = File(...),
     name: str = Form(None),
     use_llm: bool = Form(True),
-    extra_prompt: str = Form("")  # 추가 프롬프트 받기
+    extra_prompt: str = Form(""),
+    slow_rate: float = Form(1.0)
 ):
+    # 1) 파일 형식 검증
     if not file.filename.lower().endswith((".mp3", ".wav")):
         raise HTTPException(400, "지원되지 않는 오디오 형식입니다.")
 
+    # 2) 저장 경로 결정
     song_id       = str(uuid.uuid4())
     original_name = name.strip() if name else Path(file.filename).stem
     save_path     = os.path.join(UPLOAD_DIR, f"{song_id}.mp3")
 
+    # 3) 파일 저장
     with open(save_path, "wb") as buf:
         shutil.copyfileobj(file.file, buf)
 
-    # ───────────── 차트 생성 ─────────────
+    # 4) 차트 생성
     if use_llm:
         try:
-            summary    = analyze_audio(save_path)
-            chart_part = await build_chart_with_chunks(4, summary, extra_prompt)   # 4Key만 기본 생성
+            # slow_rate을 analyze_audio에 전달
+            summary    = analyze_audio(save_path, slow_rate=slow_rate)
+            # LLM 호출 (비동기)
+            chart_part = await build_chart_with_chunks(
+                4, summary, extra_prompt
+            )
+            # build_chart_with_chunks_sync 호출 (블로킹 작업이므로 to_thread로 감싸도, 그냥 호출해도 무방)
+            # chart_part = await asyncio.to_thread(
+            #     build_chart_with_chunks_sync,
+            #     4, summary, extra_prompt
+            # )
             chart_json = chart_part
         except Exception as e:
             print("LLM 오류:", e)
@@ -303,10 +368,12 @@ async def upload_music(
     else:
         chart_json = generate_dummy_charts()
 
+    # 5) 차트 파일로 저장
     chart_path = os.path.join(CHART_DIR, f"{song_id}.json")
     with open(chart_path, "w", encoding="utf-8") as f:
         json.dump(chart_json, f, ensure_ascii=False, indent=2)
 
+    # 6) 메타 정보 갱신
     songs_data[song_id] = {
         "song_id": song_id,
         "original_name": original_name,
@@ -339,42 +406,53 @@ async def get_audio(song_id: str):
 @app.post("/api/regenerate/{song_id}")
 async def regenerate_chart(
     song_id: str,
-    key: int = Form(...),                 # 4, 5, 6
+    key: int = Form(...),            # 4, 5, 6 중 하나
     use_llm: bool = Form(True),
-    extra_prompt: str = Form(""),  # 추가 프롬프트 받기
+    extra_prompt: str = Form(""),
+    slow_rate: float = Form(1.0)
 ):
+    # 1) 파일 존재 확인
     audio_path = os.path.join(UPLOAD_DIR, f"{song_id}.mp3")
     chart_path = os.path.join(CHART_DIR,  f"{song_id}.json")
     if not os.path.isfile(audio_path) or not os.path.isfile(chart_path):
-        raise HTTPException(404, "파일이 없습니다.")
+        raise HTTPException(404, "해당 파일을 찾을 수 없습니다.")
 
+    # 2) 기존 차트 로드
     with open(chart_path, "r", encoding="utf-8") as f:
         chart_json = json.load(f)
 
+    # 3) LLM 으로 재생성 또는 더미
     if use_llm:
         try:
-            summary = analyze_audio(audio_path)
-            chart_part = await build_chart_with_chunks(key, summary, extra_prompt)
+            summary    = analyze_audio(audio_path, slow_rate=slow_rate)
+            # chart_part = await asyncio.to_thread(
+            #     build_chart_with_chunks_sync,
+            #     key, summary, extra_prompt
+            # )
+            chart_part = await build_chart_with_chunks(
+                key, summary, extra_prompt
+            )
         except Exception as e:
             print("LLM 오류:", e)
-            chart_part = {f"{key}key": generate_dummy_charts()[f"{key}key"]}
+            chart_part = { f"{key}key": generate_dummy_charts()[f"{key}key"] }
     else:
-        chart_part = {f"{key}key": generate_dummy_charts()[f"{key}key"]}
+        chart_part = { f"{key}key": generate_dummy_charts()[f"{key}key"] }
 
+    # 4) 해당 Key 차트만 교체
     chart_json[f"{key}key"] = chart_part[f"{key}key"]
 
+    # 5) 파일 덮어쓰기
     with open(chart_path, "w", encoding="utf-8") as f:
         json.dump(chart_json, f, ensure_ascii=False, indent=2)
 
-    # 곡 메타 업데이트
+    # 6) 메타 정보 업데이트
     songs_data[song_id][f"has{key}"] = True
     save_songs_data()
 
     return {"status": "ok", "message": f"{key}Key 차트를 재생성했습니다."}
-
 # ────────────── API: 그냥 프롬프트 전달 ─────────────
 @app.post("/api/prompt/")
-async def regenerate_chart(
+async def prompt_raw_call(
     prompt: str = Form(...),
     use_llm: bool = Form(True),
 ):
@@ -398,3 +476,29 @@ async def debug_prompt(prompt_id: int):
         return {"error": "No such prompt file found."}
     except Exception as e:
         return {"error": f"Error reading prompt file: {str(e)}"}
+    
+@app.delete("/api/song/{song_id}")
+async def delete_song(song_id: str):
+    """
+    Deletes both audio and chart files for the given song_id,
+    and removes its metadata entry.
+    """
+    audio_path = os.path.join(UPLOAD_DIR, f"{song_id}.mp3")
+    chart_path = os.path.join(CHART_DIR,  f"{song_id}.json")
+
+    # 1) 파일 존재 확인
+    if not os.path.isfile(audio_path) and not os.path.isfile(chart_path):
+        raise HTTPException(404, "해당 song_id의 파일을 찾을 수 없습니다.")
+
+    # 2) 파일 삭제
+    if os.path.isfile(audio_path):
+        os.remove(audio_path)
+    if os.path.isfile(chart_path):
+        os.remove(chart_path)
+
+    # 3) 메타데이터에서 제거
+    if song_id in songs_data:
+        songs_data.pop(song_id)
+        save_songs_data()
+
+    return {"status": "ok", "message": f"Song {song_id} has been deleted."}
