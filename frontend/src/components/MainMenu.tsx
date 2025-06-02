@@ -16,7 +16,7 @@ const MainMenu: React.FC = () => {
     <div className="flex items-center justify-center w-full h-screen bg-gray-100">
       {/* 고정 해상도 박스 */}
       <div className="w-[360px] h-[640px] bg-white rounded-lg shadow-lg flex flex-col items-center justify-center">
-        <h1 className="text-4xl font-bold mb-4">Rhythm Game</h1>
+        <h1 className="text-4xl font-bold mb-4">AnyRhythm</h1>
         <p className="text-lg text-gray-600">Press any key to start</p>
       </div>
     </div>

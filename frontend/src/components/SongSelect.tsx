@@ -18,6 +18,7 @@ const SongSelect: React.FC = () => {
   const [genPrompt,        setGenPrompt]        = useState('');
   const [genSlowRate,      setGenSlowRate]      = useState<number>(1.0);
   const [selectedFile,     setSelectedFile]     = useState<File | null>(null);
+  const [genKey, setGenKey] = useState<4|5|6>(4);  // ← 추가
 
   const navigate = useNavigate();
 
@@ -51,23 +52,24 @@ const SongSelect: React.FC = () => {
   };
 
   // 모달에서 “Generate” 클릭
-  const handleGenerate = async () => {
-    if (!selectedFile) return;
-    setUploading(true);
-    const defaultName = selectedFile.name.replace(/\.[^/.]+$/, '');
-    const nameToUse = uploadName.trim() || defaultName;
-    await uploadMusic(
-      selectedFile,
-      nameToUse,
-      genPrompt,
-      genSlowRate
-    );
-    setUploading(false);
-    setUploadName('');
-    setSelectedFile(null);
-    setGenModalVisible(false);
-    await loadSongs();
-  };
+const handleGenerate = async () => {
+  if (!selectedFile) return;
+  setUploading(true);
+  const defaultName = selectedFile.name.replace(/\.[^/.]+$/, '');
+  const nameToUse = uploadName.trim() || defaultName;
+  await uploadMusic(
+    selectedFile,
+    nameToUse,
+    genKey,           // ← 추가된 key 인자
+    genPrompt,
+    genSlowRate
+  );
+  setUploading(false);
+  setUploadName('');
+  setSelectedFile(null);
+  setGenModalVisible(false);
+  await loadSongs();
+};
 
   const openRegenModal = (song: SongData) => {
     setTargetSong(song);
@@ -259,6 +261,22 @@ const SongSelect: React.FC = () => {
                 Accuracy improvement on fast songs (experimental)
               </p>
             </div>
+            <div className="flex justify-center space-x-2 mb-4">
+      {[4, 5, 6].map(k => (
+        <button
+          key={k}
+          onClick={() => setGenKey(k as 4|5|6)}
+          className={`px-3 py-1 rounded ${
+            genKey === k
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-200 text-gray-700'
+          }`}
+        >
+          {k}-Keys
+        </button>
+      ))}
+    </div>
+
             <div className="flex justify-end space-x-2">
               <button
                 onClick={() => setGenModalVisible(false)}

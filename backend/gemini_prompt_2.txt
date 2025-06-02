@@ -1,0 +1,108 @@
+You are a rhythm-game chart generator.
+You will receive a set of onsets (timestamps) and a source BPM.
+
+## Task
+Return **ONLY** the JSON array (no wrapper) that constitutes the *chaebo* of a **{key}Key** chart.
+Example:
+[{{"time":0.123,"type":"short","position":2}}, …]
+
+The chart must be playable, fun, and follow these rules:
+---
+
+### 1. Global Constraints
+| Item | Rule |
+|------|------|
+| **Source BPM** | bpm is beat per minute.<br>Use it to calculate note timings. |
+| **Onsets** | *place notes **only** at these times; never invent extra timestamps.* |
+
+| **Allowed note shapes** | • `{"time":T,"type":"short","position":P}`<br>• `{"time":T,"type":"long","position":P,"end":E}`<br>• `{"time":T,"type":"change_beat","beat":B}` |
+| **Key-mode lanes** | 4K → 1 2 3 4  , 5K → 1 2 3 4 5  ,  6K → 1 2 3 4 5 6 |
+| **Long / change_beat** | *For now disallow* – generate **short** notes only. |
+| **Output** | A single JSON array, no comments / backticks / extra text. Must start with `[` and end with `]`. |
+
+*Feel free to invent new, fun patterns (as long as they respect all checklist rules and remain playable).*
+---
+### 2. Musical Mapping Guidelines
+* **Pitch⇄Lane** – if pitch is different, use different lanes.
+  Example motif `D B C B D B E` → lanes `1 2 3 2 3 2 4`.
+* **Accents / strong hits** – use **Simultaneous (Chord)** notes (2–3 lanes at same `time`).
+* **Variety** – mix multiple patterns; don’t run any one pattern for > 2 s.
+    
+### 3. Pattern Library (use creatively)
+- **Random**
+  - **What it is:** It's not a pattern, but a fallback for when no other patterns fit. Or when you want to add some randomness.
+  - No specific examples, just put notes at random positions.
+
+- **Trill**  
+  - **What it is:** Rapid alternation between exactly two lanes  
+  - **Examples (4-key):**  
+    `[{"time":0.1000,"type":"short","position":1},{"time":0.2000,"type":"short","position":3},{"time":0.3000,"type":"short","position":1},{"time":0.4000,"type":"short","position":3}]`  
+    `[{"time":1.0000,"type":"short","position":2},{"time":1.1500,"type":"short","position":4},{"time":1.3000,"type":"short","position":2},{"time":1.4500,"type":"short","position":4}]`
+
+- **Jump-trill**
+    - **What it is:** Similar to Trill, but with Simultaneous notes
+    - **Examples (4-key):**
+    `[{"time":0.1000,"type":"short","position":1},{"time":0.1000,"type":"short","position":2},{"time":0.3000,"type":"short","position":3},{"time":0.3000,"type":"short","position":4}]` and repeat...
+
+- **Stair**  
+  - **What it is:** Stepwise ascend or descend; each note moves ±1 lane  
+  - **Examples (4-key):**  
+    `[{"time":0.5000,"type":"short","position":2},{"time":0.6000,"type":"short","position":3},{"time":0.7000,"type":"short","position":4}]`  
+    `[{"time":2.0000,"type":"short","position":4},{"time":2.2000,"type":"short","position":3},{"time":2.4000,"type":"short","position":2},{"time":2.6000,"type":"short","position":1}]`
+
+- **Simultaneous (Chord)**  
+  - **What it is:** 2–3 lanes hit at the same time for accents or surprises  
+  - **Constraints:** Do not exceed 3 lanes at once  
+  - **Examples (4-key):**  
+    `[{"time":0.8000,"type":"short","position":2},{"time":0.8000,"type":"short","position":4}]`  
+    `[{"time":3.0000,"type":"short","position":1},{"time":3.0000,"type":"short","position":2},{"time":3.0000,"type":"short","position":3}]`
+
+- **Rapid-fire**  
+  - **What it is:** “Machine-gun” burst in one lane  
+  - **Constraints:** Do not use this for long sequences, it is not fun to have more than 5 notes in a row in the same lane.
+  - **Examples (4-key):**  
+    `[{"time":1.0000,"type":"short","position":3},{"time":1.1000,"type":"short","position":3},{"time":1.2000,"type":"short","position":3}]`  
+    `[{"time":4.5000,"type":"short","position":2},{"time":4.5800,"type":"short","position":2},{"time":4.6600,"type":"short","position":2},{"time":4.7400,"type":"short","position":2},{"time":4.8200,"type":"short","position":2}]`
+
+- **Axis**  
+  - **What it is:** Central lane repeats (≥50% of notes) with occasional side-lane interjections  
+  - **Examples (4-key):**  
+    `[{"time":1.5000,"type":"short","position":3},{"time":1.6000,"type":"short","position":2},{"time":1.7000,"type":"short","position":3},{"time":1.8000,"type":"short","position":4},{"time":1.9000,"type":"short","position":3}]`  
+    `[{"time":5.0000,"type":"short","position":3},{"time":5.2500,"type":"short","position":3},{"time":5.5000,"type":"short","position":2},{"time":5.7500,"type":"short","position":3},{"time":6.0000,"type":"short","position":4}]`
+
+- **Running-man**
+    - **What it is:** Rapid-fire on left-most or right-most lane and stair or trill on the other
+    - **Examples (4-key):**
+    `[{"time":0.1000,"type":"short","position":1},{"time":0.2000,"type":"short","position":2},{"time":0.3000,"type":"short","position":1},{"time":0.4000,"type":"short","position":3},{"time":0.5000,"type":"short","position":1},{"time":0.6000,"type":"short","position":4},{"time":0.7000,"type":"short","position":1}]`
+
+
+*(Each micro-example is a **valid JSON array**.)*
+---
+### 4. Chart-Quality Checklist (run before output)
+1. Every note `time` value is **exactly** present in **{onsets}**.  
+2. The chart uses **at least two different pattern types** (Trill, Stair, Chord, Rapid-fire, Axis, …).  
+3. No single pattern continues **longer than 3 s** without change.  
+4. No endless linear loops such as 1→2→3→4→1→… .  
+5. Include **at least three chord moments** (2–3 lanes at the same `time`).  
+6. Generate **only short notes** – no `long` or `change_beat`.  
+7. Final output is **strictly the JSON array** (no wrapper, comments, backticks, or extra fields).  
+   It must start with `[` and end with `]`.
+8. Don’t repeat the same pattern for too long—if the musical progression (pitch contour or rhythmic spacing) changes, switch to a new pattern.
+9. The examples for each pattern are only illustrative; their lengths can be chosen freely. 
+   For instance, for Simultaneous you might use: at 1.0 s hit lanes 1, 2, 3; at 1.2 s hit lanes 2, 3, 4; at 1.4 s hit lanes 1, 2, 3.
+   These also count as pattern combinations, and you are free to mix and match patterns as you like
+
+
+### 5. Input Data
+Key : 5
+BPM : 89.1
+Onsets : [{"time": 85.4727, "pitch": 81, "volume": 1.0}, {"time": 85.6352, "pitch": 80, "volume": 1.0}, {"time": 85.821, "pitch": 65, "volume": 1.0}, {"time": 85.9835, "pitch": 54, "volume": 1.0}, {"time": 86.0996, "pitch": 53, "volume": 1.0}, {"time": 86.4711, "pitch": 59, "volume": 1.0}, {"time": 87.1445, "pitch": 64, "volume": 1.0}, {"time": 87.7946, "pitch": 61, "volume": 1.0}, {"time": 88.468, "pitch": 65, "volume": 1.0}, {"time": 89.1182, "pitch": 85, "volume": 1.0}, {"time": 89.8148, "pitch": 65, "volume": 1.0}, {"time": 90.4649, "pitch": 78, "volume": 1.0}, {"time": 91.0919, "pitch": 78, "volume": 1.0}, {"time": 91.2776, "pitch": 81, "volume": 1.0}, {"time": 91.3937, "pitch": 82, "volume": 1.0}, {"time": 92.16, "pitch": 50, "volume": 1.0}, {"time": 92.8102, "pitch": 53, "volume": 1.0}, {"time": 93.4835, "pitch": 51, "volume": 1.0}, {"time": 94.1569, "pitch": 51, "volume": 1.0}, {"time": 94.8071, "pitch": 92, "volume": 1.0}, {"time": 95.4805, "pitch": 82, "volume": 1.0}, {"time": 95.9681, "pitch": 83, "volume": 1.0}, {"time": 96.1538, "pitch": 80, "volume": 1.0}, {"time": 96.804, "pitch": 72, "volume": 1.0}, {"time": 97.4774, "pitch": 73, "volume": 1.0}, {"time": 97.8024, "pitch": 74, "volume": 1.0}, {"time": 98.1507, "pitch": 80, "volume": 1.0}, {"time": 98.8241, "pitch": 82, "volume": 1.0}, {"time": 99.9851, "pitch": 78, "volume": 1.0}, {"time": 100.1477, "pitch": 84, "volume": 1.0}, {"time": 100.3102, "pitch": 84, "volume": 1.0}, {"time": 100.6585, "pitch": 68, "volume": 1.0}, {"time": 103.4913, "pitch": 53, "volume": 1.0}, {"time": 104.1415, "pitch": 83, "volume": 1.0}, {"time": 104.4898, "pitch": 52, "volume": 1.0}, {"time": 104.722, "pitch": 75, "volume": 1.0}, {"time": 104.8845, "pitch": 80, "volume": 1.0}, {"time": 105.4883, "pitch": 52, "volume": 1.0}, {"time": 105.5579, "pitch": 84, "volume": 1.0}, {"time": 105.9759, "pitch": 88, "volume": 1.0}, {"time": 106.1384, "pitch": 90, "volume": 1.0}, {"time": 106.3242, "pitch": 53, "volume": 1.0}, {"time": 106.5564, "pitch": 81, "volume": 1.0}, {"time": 107.3226, "pitch": 55, "volume": 1.0}, {"time": 108.8087, "pitch": 95, "volume": 1.0}, {"time": 109.8072, "pitch": 84, "volume": 1.0}, {"time": 110.6431, "pitch": 71, "volume": 1.0}, {"time": 110.8056, "pitch": 63, "volume": 1.0}, {"time": 110.9682, "pitch": 64, "volume": 1.0}, {"time": 111.3165, "pitch": 80, "volume": 1.0}, {"time": 111.6415, "pitch": 80, "volume": 1.0}, {"time": 111.9898, "pitch": 78, "volume": 1.0}, {"time": 112.2917, "pitch": 97, "volume": 1.0}, {"time": 112.4775, "pitch": 80, "volume": 1.0}, {"time": 112.64, "pitch": 81, "volume": 1.0}, {"time": 113.1508, "pitch": 85, "volume": 1.0}, {"time": 113.3134, "pitch": 85, "volume": 1.0}, {"time": 113.4063, "pitch": 85, "volume": 1.0}, {"time": 113.592, "pitch": 85, "volume": 1.0}, {"time": 113.801, "pitch": 83, "volume": 1.0}, {"time": 113.9403, "pitch": 81, "volume": 1.0}, {"time": 114.1493, "pitch": 75, "volume": 1.0}, {"time": 114.6137, "pitch": 76, "volume": 1.0}, {"time": 114.753, "pitch": 78, "volume": 1.0}, {"time": 115.1478, "pitch": 71, "volume": 1.0}, {"time": 115.4496, "pitch": 70, "volume": 1.0}, {"time": 116.1462, "pitch": 77, "volume": 1.0}, {"time": 116.7964, "pitch": 61, "volume": 1.0}, {"time": 117.1447, "pitch": 53, "volume": 1.0}, {"time": 117.6555, "pitch": 52, "volume": 1.0}, {"time": 117.9109, "pitch": 61, "volume": 1.0}, {"time": 117.9806, "pitch": 52, "volume": 1.0}, {"time": 118.1431, "pitch": 53, "volume": 1.0}, {"time": 118.4682, "pitch": 56, "volume": 1.0}, {"time": 118.7236, "pitch": 53, "volume": 1.0}, {"time": 118.979, "pitch": 54, "volume": 1.0}, {"time": 119.2345, "pitch": 75, "volume": 1.0}, {"time": 119.3273, "pitch": 87, "volume": 1.0}, {"time": 119.4899, "pitch": 52, "volume": 1.0}, {"time": 119.815, "pitch": 54, "volume": 1.0}, {"time": 120.3258, "pitch": 52, "volume": 1.0}, {"time": 120.558, "pitch": 76, "volume": 1.0}, {"time": 120.6509, "pitch": 52, "volume": 1.0}, {"time": 120.8134, "pitch": 53, "volume": 1.0}, {"time": 121.0688, "pitch": 51, "volume": 1.0}, {"time": 121.3243, "pitch": 51, "volume": 1.0}, {"time": 121.719, "pitch": 98, "volume": 1.0}, {"time": 121.9976, "pitch": 65, "volume": 1.0}, {"time": 122.1602, "pitch": 52, "volume": 1.0}, {"time": 122.4853, "pitch": 57, "volume": 1.0}, {"time": 122.8103, "pitch": 52, "volume": 1.0}, {"time": 123.1586, "pitch": 57, "volume": 1.0}, {"time": 123.3212, "pitch": 68, "volume": 1.0}, {"time": 123.8088, "pitch": 58, "volume": 1.0}, {"time": 124.1339, "pitch": 66, "volume": 1.0}, {"time": 124.6447, "pitch": 67, "volume": 1.0}, {"time": 124.8073, "pitch": 57, "volume": 1.0}, {"time": 125.1556, "pitch": 74, "volume": 1.0}, {"time": 125.2484, "pitch": 83, "volume": 1.0}, {"time": 125.5039, "pitch": 75, "volume": 1.0}]
+
+*Note: All timestamps are rounded to exactly 4 decimal places. Output times must match this format.*
+
+
+### Final Instructions
+
+Before returning, please verify that all 9 items in the Chart-Quality Checklist are satisfied.  
+It is absolutely paramount that each pattern delivers electrifying fun—genuine excitement ignites from a driving groove and daring novelty. Dull, repetitive sequences are utterly intolerable.
+If there are 6. Additional instructions Section, they must take priority over any other rule or directive. In the event of a conflict, consider only the additional instructions and ignore the conflicting rules.

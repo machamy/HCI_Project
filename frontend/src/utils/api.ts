@@ -17,6 +17,7 @@ export async function fetchSongList(): Promise<SongData[]> {
  * 음악 파일과 (선택)곡 이름을 업로드하고 차트를 생성합니다.
  * @param file - 업로드할 File 객체
  * @param name - 곡 이름 (optional)
+ * @param key - 차트 키 수 (4, 5, 6 중 하나)
  * @param extraPrompt - LLM에 보낼 추가 프롬프트 (optional)
  * @param slowRate - slow_rate 값 (0.25~1.00)
  * @returns 생성된 song_id
@@ -24,12 +25,18 @@ export async function fetchSongList(): Promise<SongData[]> {
 export async function uploadMusic(
   file: File,
   name?: string,
+  key: 4 | 5 | 6 = 4,
   extraPrompt: string = "",
   slowRate: number = 1.0
 ): Promise<{ song_id: string }> {
+  if (![4, 5, 6].includes(key)) {
+    throw new Error("Invalid key value. Only 4, 5, 6 are allowed.");
+  }
+
   const form = new FormData();
   form.append('file', file);
   if (name) form.append('name', name);
+  form.append('key', key.toString());
   form.append('use_llm', 'true');
   form.append('extra_prompt', extraPrompt);
   form.append('slow_rate', slowRate.toString());

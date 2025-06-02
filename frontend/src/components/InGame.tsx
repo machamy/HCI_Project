@@ -92,8 +92,11 @@ export default function InGame() {
     <div className="flex items-center justify-center w-full h-screen bg-black">
       <div className="w-[360px] h-[640px] bg-black rounded-lg overflow-hidden relative">
 
-        {/* 게임 캔버스 */}
-        <div ref={wrapperRef} className="w-full h-full" />
+              {/* 게임 캔버스 (이 div에 flex centering 추가) */}
+      <div
+        ref={wrapperRef}
+        className="w-full h-full flex items-center justify-center"
+      />
 
         {/* 설정 창 */}
         {showSettings && (

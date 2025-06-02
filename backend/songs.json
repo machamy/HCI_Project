@@ -6,13 +6,6 @@
     "has5": true,
     "has6": true
   },
-  "e54318ff-d092-4d4c-8756-8a703317ce00": {
-    "song_id": "e54318ff-d092-4d4c-8756-8a703317ce00",
-    "original_name": "30 sec 01",
-    "has4": true,
-    "has5": false,
-    "has6": true
-  },
   "14ab8165-850e-4acf-8fef-aa7356b08270": {
     "song_id": "14ab8165-850e-4acf-8fef-aa7356b08270",
     "original_name": "30 sec 02",
@@ -25,12 +18,47 @@
     "original_name": "Rainy_Waltz",
     "has4": true,
     "has5": false,
-    "has6": false
+    "has6": true
   },
   "5b228873-61d9-4a54-8e70-352b4a5f593d": {
     "song_id": "5b228873-61d9-4a54-8e70-352b4a5f593d",
     "original_name": "Second+Run",
     "has4": true,
+    "has5": false,
+    "has6": true
+  },
+  "8485ab0e-1195-4347-84af-88c526cf5a8d": {
+    "song_id": "8485ab0e-1195-4347-84af-88c526cf5a8d",
+    "original_name": "Second Run (gemini 2.5 flash)",
+    "has4": true,
+    "has5": false,
+    "has6": true
+  },
+  "f8bdd1e1-c716-4b7f-82a9-1abcbaecca3e": {
+    "song_id": "f8bdd1e1-c716-4b7f-82a9-1abcbaecca3e",
+    "original_name": "kekka orai mp3",
+    "has4": true,
+    "has5": false,
+    "has6": true
+  },
+  "aff0ba6c-99ce-45fb-9198-0f680f6647fd": {
+    "song_id": "aff0ba6c-99ce-45fb-9198-0f680f6647fd",
+    "original_name": "xi - Freedom Dive “",
+    "has4": true,
+    "has5": false,
+    "has6": true
+  },
+  "b8257bb5-55c6-4775-b71a-fc1eef203bc1": {
+    "song_id": "b8257bb5-55c6-4775-b71a-fc1eef203bc1",
+    "original_name": "[DJMAX ARCHIVE] Break Out by Night Tempo (weD58h0F2cg)",
+    "has4": true,
+    "has5": false,
+    "has6": true
+  },
+  "b4a70880-f27e-4cf8-9854-b3eb16cd6457": {
+    "song_id": "b4a70880-f27e-4cf8-9854-b3eb16cd6457",
+    "original_name": "Test",
+    "has4": false,
     "has5": false,
     "has6": true
   }

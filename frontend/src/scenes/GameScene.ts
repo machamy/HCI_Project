@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { Chart, Note } from '../types/chart';
 
-const JUDGE = { perfect: 0.10, good: 0.15, miss: 0.25};
+const JUDGE = { perfect: 0.10, good: 0.15, miss: 0.20};
 
 interface ActiveNote {
   note: Note;
@@ -103,6 +103,17 @@ export class GameScene extends Phaser.Scene {
     this.spawnNotes(list.chaebo);
     this.setupInput();
 
+    // 외부에서 Scene.pause() 호출 시 처리
+    this.events.on('pause', () => {
+      this.paused = true;
+      this.audio.pause();
+    });
+    // 외부에서 Scene.resume() 호출 시 처리
+    this.events.on('resume', () => {
+      this.paused = false;
+      if (this.songStarted) this.audio.play();
+    });
+
     window.addEventListener('rg-set-volume', (e: any) => {
       this.audio.volume = e.detail as number;
     });
@@ -115,7 +126,7 @@ export class GameScene extends Phaser.Scene {
     this.laneKeys = this.keyMap[this.keyMode].map(code =>
       this.input.keyboard.addKey(code)
     );
-    this.input.keyboard.on('keydown-P', () => this.togglePause());
+  
     this.input.keyboard.on('keydown-U', () => this.toggleDebug());
     this.input.keyboard.on('keydown-ONE', () => this.speed = Math.max(0.5, this.speed - 0.5));
     this.input.keyboard.on('keydown-TWO', () => this.speed += 0.5);
@@ -449,17 +460,21 @@ private showResults() {
     .text(cx, cy + 120, 'Return to Menu', { font: '20px Arial', color: '#00aaff' })
     .setOrigin(0.5)
     .setInteractive();
-  btn.on('pointerup', () => window.dispatchEvent(new CustomEvent('rg-exit')));
+  btn.on('pointerup', () =>{ 
+    this.audio.pause();
+    this.scene.stop();
+    window.dispatchEvent(new CustomEvent('rg-exit'));
+  });
   children.push(btn);
 
   this.resultContainer = this.add.container(0, 0, children);
 }
 
-  private togglePause() {
-    this.paused = !this.paused;
-    if (this.paused) { this.scene.pause(); this.audio.pause(); }
-    else         { this.scene.resume(); this.audio.play();  }
-  }
+  // private togglePause() {
+  //   this.paused = !this.paused;
+  //   if (this.paused) { this.scene.pause(); this.audio.pause(); }
+  //   else         { this.scene.resume(); this.audio.play();  }
+  // }
 
   private toggleDebug() {
     this.debugMode = !this.debugMode;

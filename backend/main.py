@@ -27,7 +27,15 @@ app.add_middleware(
 UPLOAD_DIR = "uploads"
 CHART_DIR  = "charts"
 SONGS_FILE = "songs.json"
+MODELS = [
+    "gemini-2.5-flash-preview-05-20",
+    "gemini-2.5-pro-preview-05-06",
+    "gemini-2.0-flash",
+    "gemini-1.5-pro",
+]
 MODEL_NAME = "gemini-2.0-flash"
+
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(CHART_DIR, exist_ok=True)
 
@@ -54,6 +62,13 @@ def generate_dummy_charts() -> Dict[str, Any]:
             for k in (4, 5, 6)}
 
 # ────────────── 오디오 분석 ─────────────
+
+async def analyze_audio_thread(path: str, slow_rate: float = 0.5, max_onsets: int = 400) -> Dict[str, Any]:
+    """
+    기존의 analyze_audio를 별도 스레드에서 실행하도록 감싸는 래퍼입니다.
+    """
+    return await asyncio.to_thread(analyze_audio, path, slow_rate, max_onsets)
+
 def analyze_audio(
     path: str,
     slow_rate: float = 0.5,
@@ -117,21 +132,26 @@ def analyze_audio(
 
 # ────────────── Gemini 호출 ─────────────
 def call_gemini_raw(prompt: str) -> Any:
+    print("call_gemini_raw")
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError("환경 변수 GOOGLE_API_KEY가 설정돼 있지 않습니다.")
 
     client = genai.Client(api_key=api_key)
-
+    print("Gemini 클라이언트 생성 완료")
+    # resp = client.models.generate_content(
+    #     model   = MODEL_NAME,
+    #     contents= prompt.strip(),
+    #     config  = genai.types.GenerateContentConfig(
+    #         max_output_tokens=8000,
+    #         temperature     =0.3,
+    #     )
+    # )
     resp = client.models.generate_content(
         model   = MODEL_NAME,
-        contents= prompt.strip(),
-        config  = genai.types.GenerateContentConfig(
-            max_output_tokens=8000,
-            temperature     =0.3,
-        )
+        contents= prompt.strip()
     )
-
+    print("Gemini 응답 수신 완료", resp)
     text = resp.text.strip()
     if not text:
         raise RuntimeError("Gemini 응답이 비어 있습니다.")
@@ -203,20 +223,58 @@ The chart must be playable, fun, and follow these rules:
 *Feel free to invent new, fun patterns (as long as they respect all checklist rules and remain playable).*
 ---
 ### 2. Musical Mapping Guidelines
-* **Pitch⇄Lane** – lower/softer sounds to left lanes, higher/brighter to right.  
+* **Pitch⇄Lane** – if pitch is different, use different lanes.
   Example motif `D B C B D B E` → lanes `1 2 3 2 3 2 4`.
 * **Accents / strong hits** – use **Simultaneous (Chord)** notes (2–3 lanes at same `time`).
 * **Variety** – mix multiple patterns; don’t run any one pattern for > 2 s.
     
 ### 3. Pattern Library (use creatively)
+- **Random**
+  - **What it is:** It's not a pattern, but a fallback for when no other patterns fit. Or when you want to add some randomness.
+  - No specific examples, just put notes at random positions.
 
-| Pattern | What it is | JSON micro-example (4-key) |
-|---------|------------|----------------------------|
-| **Trill** | Rapid alternation between **exactly two lanes**.<br>Spacing ≤ 0.20 s. | `[{"time":0.10,"type":"short","position":1},{"time":0.20,"type":"short","position":3},{"time":0.30,"type":"short","position":1},{"time":0.40,"type":"short","position":3}]` |
-| **Stair** | Stepwise ascend/descend; each note moves ±1 lane. | `[{"time":0.50,"type":"short","position":2},{"time":0.60,"type":"short","position":3},{"time":0.70,"type":"short","position":4}]` |
-| **Simultaneous (Chord)** | Two + lanes hit **at the same `time`**.<br>Use for accents or surprises.<br>Do **not** exceed 3 lanes at once. | `[{"time":0.80,"type":"short","position":2},{"time":0.80,"type":"short","position":4}]` |
-| **Rapid-fire** | “Machine-gun” burst in one lane.<br>Spacing < 0.12 s, burst ≤ 0.8 s. | `[{"time":1.00,"type":"short","position":3},{"time":1.10,"type":"short","position":3},{"time":1.20,"type":"short","position":3}]` |
-| **Axis** | Central lane (axis) repeats; side lanes interject.<br>Axis ≥ 50 % of notes. | `[{"time":1.50,"type":"short","position":3},{"time":1.60,"type":"short","position":2},{"time":1.70,"type":"short","position":3},{"time":1.80,"type":"short","position":4}]` |
+- **Trill**  
+  - **What it is:** Rapid alternation between exactly two lanes  
+  - **Examples (4-key):**  
+    `[{"time":0.1000,"type":"short","position":1},{"time":0.2000,"type":"short","position":3},{"time":0.3000,"type":"short","position":1},{"time":0.4000,"type":"short","position":3}]`  
+    `[{"time":1.0000,"type":"short","position":2},{"time":1.1500,"type":"short","position":4},{"time":1.3000,"type":"short","position":2},{"time":1.4500,"type":"short","position":4}]`
+
+- **Jump-trill**
+    - **What it is:** Similar to Trill, but with Simultaneous notes
+    - **Examples (4-key):**
+    `[{"time":0.1000,"type":"short","position":1},{"time":0.1000,"type":"short","position":2},{"time":0.3000,"type":"short","position":3},{"time":0.3000,"type":"short","position":4}]` and repeat...
+
+- **Stair**  
+  - **What it is:** Stepwise ascend or descend; each note moves ±1 lane  
+  - **Examples (4-key):**  
+    `[{"time":0.5000,"type":"short","position":2},{"time":0.6000,"type":"short","position":3},{"time":0.7000,"type":"short","position":4}]`  
+    `[{"time":2.0000,"type":"short","position":4},{"time":2.2000,"type":"short","position":3},{"time":2.4000,"type":"short","position":2},{"time":2.6000,"type":"short","position":1}]`
+
+- **Simultaneous (Chord)**  
+  - **What it is:** 2–3 lanes hit at the same time for accents or surprises  
+  - **Constraints:** Do not exceed 3 lanes at once  
+  - **Examples (4-key):**  
+    `[{"time":0.8000,"type":"short","position":2},{"time":0.8000,"type":"short","position":4}]`  
+    `[{"time":3.0000,"type":"short","position":1},{"time":3.0000,"type":"short","position":2},{"time":3.0000,"type":"short","position":3}]`
+
+- **Rapid-fire**  
+  - **What it is:** “Machine-gun” burst in one lane  
+  - **Constraints:** Do not use this for long sequences, it is not fun to have more than 5 notes in a row in the same lane.
+  - **Examples (4-key):**  
+    `[{"time":1.0000,"type":"short","position":3},{"time":1.1000,"type":"short","position":3},{"time":1.2000,"type":"short","position":3}]`  
+    `[{"time":4.5000,"type":"short","position":2},{"time":4.5800,"type":"short","position":2},{"time":4.6600,"type":"short","position":2},{"time":4.7400,"type":"short","position":2},{"time":4.8200,"type":"short","position":2}]`
+
+- **Axis**  
+  - **What it is:** Central lane repeats (≥50% of notes) with occasional side-lane interjections  
+  - **Examples (4-key):**  
+    `[{"time":1.5000,"type":"short","position":3},{"time":1.6000,"type":"short","position":2},{"time":1.7000,"type":"short","position":3},{"time":1.8000,"type":"short","position":4},{"time":1.9000,"type":"short","position":3}]`  
+    `[{"time":5.0000,"type":"short","position":3},{"time":5.2500,"type":"short","position":3},{"time":5.5000,"type":"short","position":2},{"time":5.7500,"type":"short","position":3},{"time":6.0000,"type":"short","position":4}]`
+
+- **Running-man**
+    - **What it is:** Rapid-fire on left-most or right-most lane and stair or trill on the other
+    - **Examples (4-key):**
+    `[{"time":0.1000,"type":"short","position":1},{"time":0.2000,"type":"short","position":2},{"time":0.3000,"type":"short","position":1},{"time":0.4000,"type":"short","position":3},{"time":0.5000,"type":"short","position":1},{"time":0.6000,"type":"short","position":4},{"time":0.7000,"type":"short","position":1}]`
+
 
 *(Each micro-example is a **valid JSON array**.)*
 ---
@@ -229,6 +287,11 @@ The chart must be playable, fun, and follow these rules:
 6. Generate **only short notes** – no `long` or `change_beat`.  
 7. Final output is **strictly the JSON array** (no wrapper, comments, backticks, or extra fields).  
    It must start with `[` and end with `]`.
+8. Don’t repeat the same pattern for too long—if the musical progression (pitch contour or rhythmic spacing) changes, switch to a new pattern.
+9. The examples for each pattern are only illustrative; their lengths can be chosen freely. 
+   For instance, for Simultaneous you might use: at 1.0 s hit lanes 1, 2, 3; at 1.2 s hit lanes 2, 3, 4; at 1.4 s hit lanes 1, 2, 3.
+   These also count as pattern combinations, and you are free to mix and match patterns as you like
+
 """
     prompt +=f"""
 ### 5. Input Data
@@ -241,8 +304,16 @@ Onsets : {json.dumps(onsets, ensure_ascii=False)}
 
 
     if extra_prompt.strip():  # 추가 프롬프트가 있다면
-        prompt += f"\n --- \n\nAdditional instructions:\n{extra_prompt.strip()}"
+        prompt += f"\n --- \n\n6.Additional instructions:\n{extra_prompt.strip()}"
+    prompt +="""\n
+### Final Instructions
+
+Before returning, please verify that all 9 items in the Chart-Quality Checklist are satisfied.  
+It is absolutely paramount that each pattern delivers electrifying fun—genuine excitement ignites from a driving groove and daring novelty. Dull, repetitive sequences are utterly intolerable.
+If there are 6. Additional instructions Section, they must take priority over any other rule or directive. In the event of a conflict, consider only the additional instructions and ignore the conflicting rules.
+"""
     return prompt.strip()
+
 
 prompt_cnt = 0
 async def ask_gemini_for_chaebo(key: int, bpm: float, onsets: List[float], extra_prompt: str = "") -> List[Dict[str, Any]]:
@@ -252,7 +323,7 @@ async def ask_gemini_for_chaebo(key: int, bpm: float, onsets: List[float], extra
     print("Gemini 요청:", prompt)  # 디버깅용
     with open(f"gemini_prompt_{prompt_cnt}.txt", "w", encoding="utf-8") as f:
         f.write(prompt)
-    res = call_gemini(prompt)        # List[dict]
+    res = await call_gemini_thread(prompt)
 
     return res
 
@@ -290,35 +361,19 @@ async def build_chart_with_chunks(key: int, summary: Dict[str, Any], extra_promp
         }
     }
 
-# ────────────── Ollama (옵션) ─────────────
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL",    "llama3:instruct")
-TIMEOUT_SEC     = 120
-
-def call_ollama_chart(prompt: str) -> Dict[str, Any]:
-    payload = {
-        "model":  OLLAMA_MODEL,
-        "prompt": prompt.strip(),
-        "system": (
-            "You are a rhythm-game chart generator. "
-            "Return ONLY valid JSON matching the schema."
-        ),
-        "options": {"temperature":0.3, "num_predict":4096},
-        "stream": False
-    }
-    url = f"{OLLAMA_BASE_URL}/api/generate"
-    r = requests.post(url, json=payload, timeout=TIMEOUT_SEC)
-    if r.status_code != 200:
-        raise RuntimeError(f"Ollama 응답 코드 {r.status_code}: {r.text[:400]}")
-    data = r.json()
-    text = data.get("response", "").strip()
-
-    if text.startswith("```"):
-        blocks = [b.strip() for b in text.split("```") if b.strip()]
-        if blocks and blocks[0].lower().startswith("json"):
-            blocks = blocks[1:]
-        text = blocks[0] if blocks else ""
+def call_gemini_blocking(prompt: str) -> Any:
+    """
+    기존 call_gemini_raw+call_gemini 과정을 합쳐서
+    완전히 블로킹으로 실행하는 동기 함수.
+    """
+    text = call_gemini_raw(prompt)
+    # JSON 블록 처리, 디버깅 파일 쓰기, JSON 파싱까지 그대로 둡니다.
+    if text.startswith("```json"):
+        text = text.replace("```", "").replace("json", "").strip()
     return json.loads(text)
+
+async def call_gemini_thread(prompt: str) -> Any:
+    return await asyncio.to_thread(call_gemini_blocking, prompt)
 
 # ────────────── API: 곡 리스트 ─────────────
 @app.get("/api/songs")
@@ -330,6 +385,7 @@ async def list_songs():
 async def upload_music(
     file: UploadFile = File(...),
     name: str = Form(None),
+    key: int = Form(4),  # 4, 5, 6 중 하나
     use_llm: bool = Form(True),
     extra_prompt: str = Form(""),
     slow_rate: float = Form(1.0)
@@ -354,7 +410,7 @@ async def upload_music(
             summary    = analyze_audio(save_path, slow_rate=slow_rate)
             # LLM 호출 (비동기)
             chart_part = await build_chart_with_chunks(
-                4, summary, extra_prompt
+                key, summary, extra_prompt
             )
             # build_chart_with_chunks_sync 호출 (블로킹 작업이므로 to_thread로 감싸도, 그냥 호출해도 무방)
             # chart_part = await asyncio.to_thread(
