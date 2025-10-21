@@ -15,40 +15,78 @@ HCI 프로그래밍 과목에서 LLM 활용을 중점으로 개발한 리듬게�
 
 ## 🏗️ 시스템 아키텍처
 
+### 📤 음악 업로드 및 채보 생성 플로우
+
 ```mermaid
 graph TB
-    A[사용자] --> B[React Frontend]
+    A[사용자] --> B[음악 파일 업로드]
     B --> C[FastAPI Backend]
-    C --> D[음악 파일 분석]
-    D --> E[librosa - Onset/Pitch 추출]
-    E --> F[Gemini LLM]
-    F --> G[채보 생성]
-    G --> H[JSON 채보 저장]
-    H --> I[Phaser.js 게임 엔진]
-    I --> B
+    C --> D[librosa 음악 분석]
+    D --> E[Onset/Pitch 추출]
+    E --> F[사용자 프롬프트 입력]
+    F --> G[Gemini LLM]
+    G --> H[채보 생성]
+    H --> I[JSON 채보 저장]
+    I --> J[곡 목록 업데이트]
     
-    subgraph "Frontend Stack"
-        B1[React 19]
-        B2[TypeScript]
-        B3[Phaser.js 3.88]
-        B4[Tailwind CSS]
+    subgraph "분석 단계"
+        D1[음악 파일 로드]
+        D2[템포 감지]
+        D3[비트 추출]
     end
     
-    subgraph "Backend Stack"
-        C1[FastAPI]
-        C2[Python 3.10+]
-        C3[librosa]
-        C4[Google Gemini API]
+    subgraph "LLM 처리"
+        G1[음악 분석 데이터]
+        G2[사용자 요청사항]
+        G3[패턴 생성 규칙]
     end
     
-    B --> B1
-    B --> B2
-    B --> B3
-    B --> B4
-    C --> C1
-    C --> C2
-    C --> C3
-    C --> C4
+    D --> D1
+    D1 --> D2
+    D2 --> D3
+    G --> G1
+    G --> G2
+    G --> G3
+```
+
+### 🎮 게임 플레이 플로우
+
+```mermaid
+graph TB
+    A[사용자] --> B[곡 선택]
+    B --> C[채보 데이터 로드]
+    C --> D[Phaser.js 게임 엔진]
+    D --> E[음악 재생]
+    E --> F[노트 렌더링]
+    F --> G[키 입력 감지]
+    G --> H[판정 시스템]
+    H --> I[점수 계산]
+    I --> J[기록 저장]
+    
+    subgraph "게임 엔진"
+        D1[씬 관리]
+        D2[오디오 관리]
+        D3[렌더링 엔진]
+        D4[입력 처리]
+    end
+    
+    subgraph "게임 시스템"
+        H1[Perfect 판정]
+        H2[Good 판정]
+        H3[Miss 판정]
+        I1[콤보 시스템]
+        I2[최고 점수]
+    end
+    
+    D --> D1
+    D --> D2
+    D --> D3
+    D --> D4
+    H --> H1
+    H --> H2
+    H --> H3
+    I --> I1
+    I --> I2
 ```
 
 ## 🚀 주요 기능
